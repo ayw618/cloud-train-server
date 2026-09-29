@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>云端 LoRA 训练服务</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --surface: #fcfcfb; --page: #f9f9f7;
+    --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --border: rgba(11,11,11,.1);
+    --blue: #2a78d6; --good: #0ca30c; --critical: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); line-height:1.6;
+    font-family: system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width: 980px; margin:0 auto; padding: 32px 20px 60px; }
+  h1 { font-size:24px; margin:0 0 6px; }
+  .sub { color:var(--ink2); font-size:14px; margin:0 0 24px; }
+  .card { background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:20px; margin-bottom:16px; }
+  .card h2 { font-size:15px; margin:0 0 14px; display:flex; align-items:center; gap:8px; }
+  .num { width:22px;height:22px;border-radius:6px;background:var(--blue);color:#fff;
+    font-size:12px;display:inline-flex;align-items:center;justify-content:center; }
+  label { display:block; font-size:12.5px; color:var(--ink2); margin:10px 0 4px; }
+  input, select, button { font-family:inherit; font-size:14px; }
+  input, select { width:100%; padding:8px 10px; border:1px solid var(--grid);
+    border-radius:8px; background:var(--surface); color:var(--ink); }
+  .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  button { padding:9px 18px; border:none; border-radius:8px; background:var(--blue);
+    color:#fff; cursor:pointer; font-weight:600; }
+  button:hover { filter:brightness(1.08); }
+  button:disabled { background:var(--muted); cursor:not-allowed; }
+  button.ghost { background:transparent; color:var(--blue); border:1px solid var(--blue); }
+  .bar-outer { height:10px; background:var(--grid); border-radius:99px; overflow:hidden; margin:12px 0 8px; }
+  .bar { height:100%; width:0; background:var(--blue); transition:width .4s; }
+  .stat { font-size:13px; color:var(--ink2); font-variant-numeric:tabular-nums; }
+  #chart { height:280px; margin-top:12px; }
+  .badge { font-size:11px; font-weight:700; padding:2px 9px; border-radius:99px; }
+  .b-run { background:rgba(42,120,214,.12); color:#1c5cab; }
+  .b-ok  { background:rgba(12,163,12,.12); color:#0a7d0a; }
+  .b-err { background:rgba(208,59,59,.12); color:#b02a2a; }
+  .err { background:rgba(208,59,59,.06); border:1px solid rgba(208,59,59,.3);
+    border-radius:10px; padding:14px 16px; margin-top:12px; }
+  .err-msg { font-weight:700; color:var(--critical); }
+  .err-hint { font-size:13px; color:var(--ink2); margin-top:6px; }
+  pre { background:var(--page); border:1px solid var(--grid); border-radius:8px;
+    padding:10px; font-size:11.5px; overflow:auto; max-height:220px; margin-top:10px; }
+  .hide { display:none; }
+  .msg { font-size:12.5px; color:var(--muted); margin-top:8px; }
+  img.plot { max-width:100%; border:1px solid var(--grid); border-radius:8px; margin:12px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>云端 LoRA 训练服务</h1>
+  <p class="sub">上传数据集 → 选模型 → 一键训练 → 看进度和曲线 → 下载模型</p>
+
+  <!-- ① 环境 -->
+  <div class="card">
+    <h2><span class="num">1</span>运行环境</h2>
+    <div id="gpuInfo" class="stat">检测中…</div>
+  </div>
+
+  <!-- ② 数据集 -->
+  <div class="card">
+    <h2><span class="num">2</span>数据集</h2>
+    <label>上传文件（json / jsonl / csv，字段名自动兼容 question/answer 等）</label>
+    <div class="row">
+      <input type="file" id="dsFile" accept=".json,.jsonl,.csv">
+      <button class="ghost" onclick="uploadDataset()">上传</button>
+      <button class="ghost" onclick="installGsm8k()">装内置 GSM8K</button>
+    </div>
+    <label>选择数据集</label>
+    <select id="dataset"></select>
+    <div id="dsMsg" class="msg"></div>
+  </div>
+
+  <!-- ③ 模型与超参 -->
+  <div class="card">
+    <h2><span class="num">3</span>模型与超参</h2>
+    <label>基座模型</label>
+    <select id="model"></select>
+    <div class="row">
+      <div>
+        <label>硬件档位</label>
+        <select id="preset">
+          <option value="gpu_4g">gpu_4g（4GB 显存）</option>
+          <option value="gpu_6g">gpu_6g（6GB / Turing 卡）</option>
+          <option value="gpu_8g">gpu_8g（8GB）</option>
+          <option value="gpu_12g_plus">gpu_12g_plus（12GB+）</option>
+          <option value="cpu">cpu（无显卡）</option>
+        </select>
+      </div>
+      <div><label>对话模板</label>
+        <select id="template">
+          <option value="qwen">qwen（Qwen2.5）</option>
+          <option value="qwen3">qwen3（Qwen3）</option>
+          <option value="llama3">llama3</option>
+        </select>
+      </div>
+      <div><label>Epochs</label><input id="epochs" type="number" value="3" step="0.5" min="0.5"></div>
+      <div><label>学习率</label><input id="lr" type="number" value="0.0001" step="0.00001"></div>
+      <div><label>LoRA rank</label><input id="rank" type="number" value="8" min="1"></div>
+      <div><label>最多样本数</label><input id="maxSamples" type="number" value="100000" min="1"></div>
+    </div>
+    <div style="margin-top:16px">
+      <button id="startBtn" onclick="startTraining()">一键启动训练</button>
+    </div>
+  </div>
+
+  <!-- ④ 进度 -->
+  <div class="card hide" id="progCard">
+    <h2><span class="num">4</span>训练进度 <span id="badge" class="badge b-run">RUNNING</span></h2>
+    <div class="bar-outer"><div class="bar" id="bar"></div></div>
+    <div class="stat" id="stat">准备中…</div>
+    <div id="chart"></div>
+    <div style="margin-top:12px">
+      <button class="ghost" onclick="cancelJob()">取消训练</button>
+      <button class="ghost" onclick="showLogs()">查看日志</button>
+    </div>
+    <pre id="logBox" class="hide"></pre>
+
+    <div id="errBox" class="err hide">
+      <div class="err-msg" id="errMsg"></div>
+      <div class="err-hint" id="errHint"></div>
+      <pre id="errRaw"></pre>
+    </div>
+
+    <div id="doneBox" class="hide"></div>
+  </div>
+</div>
+
+<script>
+const API = location.origin.includes('8000') ? location.origin : 'http://localhost:8000';
+let chart = null, lossData = [], currentJob = null, es = null;
+
+// ---------- 初始化 ----------
+async function init() {
+  try {
+    const gpu = await fetch(`${API}/api/system/gpu`).then(r => r.json());
+    if (gpu.available) {
+      const d = gpu.devices[0];
+      document.getElementById('gpuInfo').textContent =
+        `${d.name} · 显存 ${(d.total_mb/1024).toFixed(1)} GB · 空闲 ${(d.free_mb/1024).toFixed(1)} GB` +
+        (d.util_percent != null ? ` · 利用率 ${d.util_percent}%` : '');
+    } else {
+      document.getElementById('gpuInfo').textContent = '未检测到 GPU，将使用 CPU 训练（较慢）';
+    }
+    document.getElementById('preset').value = gpu.recommended_preset;
+  } catch (e) {
+    document.getElementById('gpuInfo').textContent = `无法连接后端：${API}`;
+  }
+  await refreshDatasets();
+  await refreshModels();
+}
+
+async function refreshDatasets() {
+  const list = await fetch(`${API}/api/datasets`).then(r => r.json());
+  const sel = document.getElementById('dataset');
+  sel.innerHTML = list.map(d =>
+    `<option value="${d.name}">${d.display_name} (${d.count} 条)</option>`).join('')
+    || '<option value="">（暂无数据集，请先上传或装内置 GSM8K）</option>';
+}
+
+async function refreshModels() {
+  const r = await fetch(`${API}/api/models`).then(r => r.json());
+  const sel = document.getElementById('model');
+  sel.innerHTML = r.local.map(m =>
+    `<option value="${m.name}">${m.name} (${m.size_mb} MB)</option>`).join('')
+    || '<option value="">（暂无模型，请先下载到 workspace/models/）</option>';
+}
+
+// ---------- 数据集 ----------
+async function uploadDataset() {
+  const f = document.getElementById('dsFile').files[0];
+  if (!f) { alert('请先选择文件'); return; }
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('display_name', f.name.replace(/\.[^.]+$/, ''));
+  fd.append('clean_calc_markers', 'true');
+
+  document.getElementById('dsMsg').textContent = '上传中…';
+  const res = await fetch(`${API}/api/datasets/upload`, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok) { document.getElementById('dsMsg').textContent = `上传失败：${data.detail}`; return; }
+  document.getElementById('dsMsg').textContent =
+    `上传成功：${data.count} 条有效样本，跳过 ${data.skipped} 条无效数据`;
+  await refreshDatasets();
+  document.getElementById('dataset').value = data.name;
+}
+
+async function installGsm8k() {
+  document.getElementById('dsMsg').textContent = '正在下载 GSM8K…（首次约 30 秒）';
+  const res = await fetch(`${API}/api/datasets/builtin/gsm8k`, { method: 'POST' });
+  const data = await res.json();
+  document.getElementById('dsMsg').textContent = res.ok
+    ? `已安装 GSM8K：${data.count} 条` : `失败：${data.detail}`;
+  if (res.ok) { await refreshDatasets(); document.getElementById('dataset').value = data.name; }
+}
+
+// ---------- 启动训练 ----------
+async function startTraining() {
+  const body = {
+    model_name:       document.getElementById('model').value,
+    dataset_name:     document.getElementById('dataset').value,
+    hardware_preset:  document.getElementById('preset').value,
+    template:         document.getElementById('template').value,
+    num_train_epochs: parseFloat(document.getElementById('epochs').value),
+    learning_rate:    parseFloat(document.getElementById('lr').value),
+    lora_rank:        parseInt(document.getElementById('rank').value),
+    max_samples:      parseInt(document.getElementById('maxSamples').value),
+  };
+  if (!body.model_name || !body.dataset_name) { alert('请先选择模型和数据集'); return; }
+
+  const res = await fetch(`${API}/api/jobs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const job = await res.json();
+  if (!res.ok) { alert(`启动失败：${job.detail}`); return; }
+
+  currentJob = job.job_id;
+  document.getElementById('startBtn').disabled = true;
+  resetProgressUI();
+  subscribe(job.job_id);
+}
+
+function resetProgressUI() {
+  lossData = [];
+  document.getElementById('progCard').classList.remove('hide');
+  document.getElementById('errBox').classList.add('hide');
+  document.getElementById('doneBox').classList.add('hide');
+  document.getElementById('logBox').classList.add('hide');
+  document.getElementById('bar').style.width = '0';
+  initChart();
+}
+
+// ---------- SSE 订阅 ----------
+function subscribe(jobId) {
+  if (es) es.close();
+  es = new EventSource(`${API}/api/jobs/${jobId}/stream`);
+
+  es.addEventListener('progress', e => {
+    const d = JSON.parse(e.data), p = d.progress;
+    setBadge(d.status);
+    document.getElementById('bar').style.width = `${p.percentage}%`;
+    // total_steps==0 说明还在加载模型 / tokenize 数据集，可能持续 10-60 秒，
+    // 这里必须给提示，否则用户会以为服务卡死了
+    document.getElementById('stat').textContent = p.total_steps
+      ? `${p.current_steps}/${p.total_steps} 步 · ${p.percentage.toFixed(1)}% · `
+        + `Epoch ${p.epoch.toFixed(2)} · Loss ${p.loss?.toFixed(4) ?? '-'} · `
+        + `已用 ${p.elapsed_time} · 剩余 ${p.remaining_time}`
+      : '正在加载模型和数据集…（首次可能需要 10-60 秒）';
+  });
+
+  es.addEventListener('point', e => {
+    const pt = JSON.parse(e.data);
+    lossData.push([pt.step, pt.loss]);
+    chart.setOption({ series: [{ data: lossData }] });
+  });
+
+  es.addEventListener('done', e => {
+    const d = JSON.parse(e.data);
+    es.close(); es = null;
+    setBadge(d.status);
+    document.getElementById('startBtn').disabled = false;
+    if (d.status === 'SUCCEEDED') showSuccess(jobId);
+    else if (d.status === 'FAILED') showError(jobId);
+    else document.getElementById('stat').textContent = '已取消';
+  });
+
+  es.onerror = () => { es.close(); es = null; pollFallback(jobId); };
+}
+
+// SSE 断了退化成轮询兜底
+function pollFallback(jobId) {
+  const timer = setInterval(async () => {
+    const job = await fetch(`${API}/api/jobs/${jobId}`).then(r => r.json());
+    const p = job.progress;
+    setBadge(job.status);
+    document.getElementById('bar').style.width = `${p.percentage}%`;
+    document.getElementById('stat').textContent =
+      `${p.current_steps}/${p.total_steps} 步 · ${p.percentage.toFixed(1)}%（轮询模式）`;
+    if (['SUCCEEDED','FAILED','CANCELLED'].includes(job.status)) {
+      clearInterval(timer);
+      document.getElementById('startBtn').disabled = false;
+      if (job.status === 'SUCCEEDED') showSuccess(jobId);
+      if (job.status === 'FAILED') showError(jobId);
+    }
+  }, 3000);
+}
+
+function setBadge(status) {
+  const el = document.getElementById('badge');
+  el.textContent = status;
+  el.className = 'badge ' + (status === 'SUCCEEDED' ? 'b-ok'
+    : status === 'FAILED' ? 'b-err' : 'b-run');
+}
+
+// ---------- 结果 ----------
+async function showSuccess(jobId) {
+  const arts = await fetch(`${API}/api/jobs/${jobId}/artifacts`).then(r => r.json());
+  const size = arts.files.find(f => f.name.includes('adapter_model'))?.size_mb ?? '?';
+  const box = document.getElementById('doneBox');
+  box.classList.remove('hide');
+  box.innerHTML = `
+    <p style="color:var(--good);font-weight:700">训练完成</p>
+    <img class="plot" src="${API}/api/jobs/${jobId}/loss_plot" alt="loss 曲线"
+         onerror="this.style.display='none'">
+    <button onclick="location.href='${API}/api/jobs/${jobId}/download'">
+      下载 LoRA 适配器（${size} MB）
+    </button>`;
+}
+
+async function showError(jobId) {
+  const job = await fetch(`${API}/api/jobs/${jobId}`).then(r => r.json());
+  document.getElementById('errBox').classList.remove('hide');
+  document.getElementById('errMsg').textContent = job.error_message || '未知错误';
+  document.getElementById('errHint').textContent = job.error_hint || '';
+  document.getElementById('errRaw').textContent = job.error_raw || '';
+}
+
+async function cancelJob() {
+  if (!currentJob) return;
+  await fetch(`${API}/api/jobs/${currentJob}/cancel`, { method: 'POST' });
+}
+
+async function showLogs() {
+  if (!currentJob) return;
+  const box = document.getElementById('logBox');
+  box.textContent = await fetch(`${API}/api/jobs/${currentJob}/logs?tail=200`).then(r => r.text());
+  box.classList.remove('hide');
+}
+
+// ---------- ECharts ----------
+function initChart() {
+  chart = echarts.init(document.getElementById('chart'));
+  chart.setOption({
+    grid: { left: 55, right: 20, top: 24, bottom: 40 },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'value', name: 'Step', nameLocation: 'middle', nameGap: 26,
+             axisLine: { lineStyle: { color: '#c3c2b7' } }, splitLine: { lineStyle: { color: '#e1e0d9' } } },
+    yAxis: { type: 'value', name: 'Loss', axisLine: { lineStyle: { color: '#c3c2b7' } },
+             splitLine: { lineStyle: { color: '#e1e0d9' } } },
+    series: [{ type: 'line', smooth: true, showSymbol: false,
+               lineStyle: { width: 2, color: '#2a78d6' }, data: lossData }],
+  });
+}
+window.addEventListener('resize', () => chart && chart.resize());
+init();
+</script>
+</body>
+</html>

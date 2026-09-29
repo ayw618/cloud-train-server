@@ -1,0 +1,45 @@
+# ---------- Python ----------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+develop-eggs/
+
+# ---------- 虚拟环境 ----------
+.venv/
+venv/
+env/
+ENV/
+
+# ---------- IDE / 编辑器 ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ---------- 运行时工作区(模型 / 数据集 / 训练产物 / 上传) ----------
+# 这些是运行时生成或下载的大文件,不应进版本库
+workspace/
+
+# ---------- 大文件 / 二进制模型权重 ----------
+*.exe
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# ---------- 日志 ----------
+*.log
+
+# ---------- 临时 / 探针脚本 ----------
+_loop_probe.py
