@@ -43,10 +43,15 @@ conda create -n cloudtrain python=3.11 -y && conda activate cloudtrain
 pip install torch torchvision --index-url https://mirrors.nju.edu.cn/pytorch/whl/cpu    # 纯 CPU (南京大学的镜像源)
 
 
-# 3. LLaMA-Factory（本仓库以 submodule 形式引入）
-# clone 本仓库时加 --recurse-submodules 可一并拉取；
-# 若已 clone 但没带 submodule，执行下面这行补拉：
+# 3. LLaMA-Factory（二选一）
+# 方式一（推荐，本仓库已用 submodule 引入）：
+#   若 clone 本仓库时加了 --recurse-submodules 则跳过此步；
+#   否则执行下面这行补拉：
 git submodule update --init --recursive
+#
+# 方式二（手动 clone，适用于直接下载 zip 而非 git clone 本仓库的情况）：
+# git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git
+#
 pip install -e "./LLaMA-Factory[torch,metrics]" -i https://pypi.mirrors.ustc.edu.cn/simple/
 
 # 4. 服务依赖
