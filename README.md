@@ -33,6 +33,9 @@ cloud-train-server/
 ## 安装
 
 ```bash
+git clone https://github.com/ayw618/cloud-train-server.git
+cd cloud-train-server
+
 # 1. Python 环境
 conda create -n cloudtrain python=3.11 -y && conda activate cloudtrain
 
