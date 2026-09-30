@@ -18,11 +18,17 @@ cloud-train-server/
 │   ├── errors.py          # 10 条错误模式 → 中文提示 + 修复建议
 │   ├── trainer.py         # 队列 + 子进程 + 进度解析 + 产物打包
 │   └── main.py            # FastAPI 全部路由
+├── LLaMA-Factory/         # git submodule（训练引擎，非本仓库代码）
 ├── frontend/index.html    # 单文件前端 demo（ECharts 画曲线）
+├── img/                   # README 截图
 ├── selfcheck.py           # 自检脚本（无需 GPU / 无需真 LLaMA-Factory）
 ├── requirements.txt
+├── .gitignore             # 排除 workspace/ 模型权重、__pycache__、*.exe 等
+├── .gitmodules            # submodule 声明
 └── README.md
 ```
+
+> `workspace/`（下载的模型、数据集、训练产物）已被 `.gitignore` 排除，首次运行时自动创建。
 
 ## 安装
 
@@ -37,8 +43,10 @@ conda create -n cloudtrain python=3.11 -y && conda activate cloudtrain
 pip install torch torchvision --index-url https://mirrors.nju.edu.cn/pytorch/whl/cpu    # 纯 CPU (南京大学的镜像源)
 
 
-# 3. LLaMA-Factory（必须放在本项目同级，或用 LLAMAFACTORY_DIR 指定）
-git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git
+# 3. LLaMA-Factory（本仓库以 submodule 形式引入）
+# clone 本仓库时加 --recurse-submodules 可一并拉取；
+# 若已 clone 但没带 submodule，执行下面这行补拉：
+git submodule update --init --recursive
 pip install -e "./LLaMA-Factory[torch,metrics]" -i https://pypi.mirrors.ustc.edu.cn/simple/
 
 # 4. 服务依赖
@@ -68,7 +76,7 @@ python selfcheck.py
 它用一个假训练脚本冒充 `llamafactory-cli`，把「上传数据集 → 注册 → 建任务 →
 生成 YAML → 起子进程 → 解析进度 → 打包下载」整条链路跑通，同时验证
 硬件档位精度互斥、Turing 卡不推荐 bf16、错误友好化、崩溃路径。
-全部通过打印 `ALL CHECKS PASSED`（当前 65 项全绿）。
+全部通过打印 `ALL CHECKS PASSED`（当前 58 项全绿）。
 
 ## 启动
 命令三选一执行
